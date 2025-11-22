@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request, Depends
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from app.utils.response import error_response
@@ -82,12 +83,67 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 # crear la app con lifespan
+tags_metadata = [
+    {
+        "name": "Stops",
+        "description": (
+            "Operaciones para listar y consultar paradas. Incluye filtros comunes, "
+            "paginación básica y ejemplos de uso. Los identificadores de parada se "
+            "expresan como enteros (`stop_id`)."
+        ),
+    },
+    {
+        "name": "Routes",
+        "description": (
+            "Operaciones para consultar rutas y sus metadatos. Proporciona detalle "
+            "de rutas individuales y listados, con campos frecuentes como `route_id`, "
+            "`route_short_name` y `route_type`."
+        ),
+    },
+    {
+        "name": "Schedule",
+        "description": (
+            "Consultas de horarios combinando `trips`, `stop_times` y `routes`. "
+            "Soporta filtrado por `stop_id`, `route_id` y fecha (`YYYY-MM-DD`). "
+            "Las respuestas incluyen la fecha de servicio cuando aplica."
+        ),
+    },
+    {
+        "name": "Realtime",
+        "description": (
+            "Endpoints de información en tiempo real: alertas, posiciones de "
+            "vehículos y actualizaciones de viaje. Diseñados para integraciones "
+            "que necesiten datos RT ligeros y serializables."
+        ),
+    },
+    {
+        "name": "Admin",
+        "description": (
+            "Operaciones administrativas y metadatos del feed GTFS. Incluye "
+            "endpoints para recargar datos, inspeccionar el estado del feed y "
+            "operaciones de mantenimiento (acceso restringido)."
+        ),
+    },
+]
+
 app = FastAPI(
     title="Cercanías API",
     description="API moderna para consultar datos GTFS de Renfe Cercanías",
     version="1.0.0",
     lifespan=lifespan,
+    openapi_tags=tags_metadata,
+    contact={"name": "daespasa", "email": ""},
+    license_info={"name": "MIT"},
+    swagger_ui_parameters={
+        "defaultModelsExpandDepth": -1,
+        "docExpansion": "list",
+        "operationsSorter": "alpha",
+        "tagsSorter": "alpha",
+    },
 )
+
+# Serve bundled static assets for the local dashboard
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # aplicar dependencia de API key a todos los routers al registrarlos
 app.include_router(stops.router, dependencies=[Depends(api_key_required)])
