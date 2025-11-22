@@ -1,353 +1,654 @@
+// ========================================
+// Dashboard Interactivo de Cercanías
+// ========================================
+
+const API_BASE = '';
+let map = null;
+let mapMarker = null;
+let currentStop = null;
+let autoRefreshInterval = null;
+let searchDebounce = null;
+
+// ========================================
+// API Helper
+// ========================================
 async function api(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error("API error " + res.status);
+  const res = await fetch(API_BASE + path);
+  if (!res.ok) throw new Error(`API error ${res.status}`);
   return res.json();
 }
 
-let page = 0;
-let pageSize = 20;
-let autoTimer = null;
-let map = null;
-let mapMarker = null;
-let expandedRoutes = new Map();
-
-async function loadNames() {
-  const names = await api("/stops/names");
-  const sel = document.getElementById("stopSelect");
-  // clear existing
-  sel.innerHTML = '<option value="">-- seleccionar parada --</option>';
-  // Load all stops; show only the name as requested
-  (names.data || []).forEach((s) => {
-    const opt = document.createElement("option");
-    opt.value = s.stop_id;
-    opt.textContent = s.stop_name || String(s.stop_id);
-    sel.appendChild(opt);
-  });
-}
-
-function debounce(fn, delay = 300) {
-  let t = null;
-  return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), delay);
-  };
-}
-
-async function doSearch(q) {
-  if (!q || q.length < 2) return;
+// ========================================
+// Inicialización
+// ========================================
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log('Dashboard inicializándose...');
+  
   try {
-    const res = await api(`/stops/search?q=${encodeURIComponent(q)}&limit=30`);
-    const sel = document.getElementById("stopSelect");
-    // present top results as options, but keep existing placeholder
-    sel.innerHTML =
-      '<option value="">-- seleccionar parada --</option>' +
-      (res.data || [])
-        .map((s) => `<option value="${s.stop_id}">${s.stop_name}</option>`)
-        .join("");
-  } catch (e) {
-    console.error(e);
+    initializeDatePicker();
+    console.log('Date picker inicializado');
+    
+    initializeMap();
+    console.log('Mapa inicializado');
+    
+    initializeTabs();
+    console.log('Tabs inicializadas');
+    
+    initializeDarkMode();
+    console.log('Dark mode inicializado');
+    
+    setupEventListeners();
+    console.log('Event listeners configurados');
+    
+    await loadStops();
+    console.log('Estaciones cargadas');
+    
+    // Mensaje de bienvenida
+    showToast('Bienvenido al Dashboard de Cercanías', 'info');
+  } catch (error) {
+    console.error('Error durante la inicialización:', error);
+    showToast('Error al inicializar el dashboard', 'error');
   }
+});
+
+// ========================================
+// Date Picker - OBLIGATORIO
+// ========================================
+function initializeDatePicker() {
+  const dateInput = document.getElementById('dateSelect');
+  const today = new Date().toISOString().split('T')[0];
+  dateInput.value = today;
+  dateInput.min = '2020-01-01';
+  dateInput.max = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  
+  dateInput.addEventListener('change', () => {
+    if (!dateInput.value) {
+      dateInput.value = today;
+      showToast('La fecha es obligatoria', 'warning');
+    }
+  });
 }
 
-async function init() {
-  await loadNames();
-  const sel = document.getElementById("stopSelect");
-  sel.addEventListener("change", async () => {
-    page = 0;
-    await onSelectChange();
-  });
-  const search = document.getElementById("searchBox");
-  if (search) {
-    search.addEventListener(
-      "input",
-      debounce((e) => {
-        doSearch(e.target.value);
-      }, 250)
-    );
+// ========================================
+// Mapa con Leaflet
+// ========================================
+function initializeMap() {
+  const mapDiv = document.getElementById('map');
+  if (!mapDiv) return;
+  
+  map = L.map('map').setView([40.4168, -3.7038], 6); // Madrid centro por defecto
+  
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+  
+  // Pequeño delay para que el mapa se renderice bien
+  setTimeout(() => map.invalidateSize(), 300);
+}
+
+function updateMap(lat, lon, name) {
+  if (!map) return;
+  
+  if (mapMarker) {
+    map.removeLayer(mapMarker);
   }
-  const refresh = document.getElementById("refreshBtn");
-  if (refresh) {
-    refresh.addEventListener("click", async () => {
-      await loadNames();
-    });
-  }
-  const auto = document.getElementById("autoRefresh");
-  if (auto) {
-    auto.addEventListener("change", () => {
-      if (auto.checked) {
-        startAuto();
-      } else {
-        stopAuto();
+  
+  map.setView([lat, lon], 15);
+  
+  mapMarker = L.marker([lat, lon])
+    .addTo(map)
+    .bindPopup(`<strong>${name}</strong><br>Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`)
+    .openPopup();
+  
+  map.invalidateSize();
+}
+
+// ========================================
+// Sistema de Tabs
+// ========================================
+function initializeTabs() {
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  console.log(`Encontrados ${tabButtons.length} botones de tabs`);
+  console.log(`Encontrados ${tabContents.length} contenidos de tabs`);
+  
+  tabButtons.forEach((btn, index) => {
+    console.log(`Configurando tab ${index}:`, btn.getAttribute('data-tab'));
+    btn.addEventListener('click', () => {
+      const tabId = btn.getAttribute('data-tab');
+      console.log('Tab clickeada:', tabId);
+      
+      // Actualizar botones
+      tabButtons.forEach(b => {
+        b.classList.remove('tab-active');
+        b.classList.add('text-slate-600', 'dark:text-slate-400');
+      });
+      btn.classList.add('tab-active');
+      btn.classList.remove('text-slate-600', 'dark:text-slate-400');
+      
+      // Actualizar contenido
+      tabContents.forEach(content => content.classList.add('hidden'));
+      const activeContent = document.getElementById(`tab-${tabId}`);
+      if (activeContent) {
+        activeContent.classList.remove('hidden');
+        
+        // Si es el tab de mapa, actualizar tamaño
+        if (tabId === 'map' && map) {
+          setTimeout(() => map.invalidateSize(), 100);
+        }
       }
     });
-  }
-  document.getElementById("prevPage").addEventListener("click", async () => {
-    if (page > 0) {
-      page--;
-      await onSelectChange();
-    }
-  });
-  document.getElementById("nextPage").addEventListener("click", async () => {
-    page++;
-    await onSelectChange();
   });
 }
 
-function startAuto() {
-  stopAuto();
-  autoTimer = setInterval(() => {
-    const sel = document.getElementById("stopSelect");
-    if (sel && sel.value) onSelectChange();
-  }, 15_000);
-}
-function stopAuto() {
-  if (autoTimer) {
-    clearInterval(autoTimer);
-    autoTimer = null;
+// ========================================
+// Dark Mode
+// ========================================
+function initializeDarkMode() {
+  const darkToggle = document.getElementById('darkToggle');
+  const themeIcon = document.getElementById('themeIcon');
+  const html = document.documentElement;
+  
+  // Cargar preferencia guardada
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  if (savedTheme === 'dark') {
+    html.classList.add('dark');
+    themeIcon.textContent = '☀️';
   }
-}
-
-function refreshAll() {
-  // Reload selected stop and any expanded routes
-  const sel = document.getElementById("stopSelect");
-  if (sel && sel.value) {
-    onSelectChange();
-  }
-  // refresh expanded route panels
-  for (const [routeId, node] of expandedRoutes.entries()) {
-    fetchRouteStops(routeId, node);
-  }
+  
+  darkToggle.addEventListener('click', () => {
+    html.classList.toggle('dark');
+    const isDark = html.classList.contains('dark');
+    themeIcon.textContent = isDark ? '☀️' : '🌙';
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  });
 }
 
-async function onSelectChange() {
-  const sel = document.getElementById("stopSelect");
-  const id = sel.value;
-  if (!id) {
-    showInfo(null);
-    renderSchedule([]);
-    return;
-  }
-  setLoading(true);
+// ========================================
+// Cargar lista de estaciones
+// ========================================
+async function loadStops() {
+  showLoading(true);
   try {
-    const stop = await api(`/stops/${id}`);
-    showInfo(stop.data || stop);
-    // update map if coordinates are present
-    const s = stop.data || stop;
-    if (s && s.stop_lat && s.stop_lon) {
-      updateMap(parseFloat(s.stop_lat), parseFloat(s.stop_lon), s.stop_name);
+    console.log('Cargando estaciones desde /stops/names...');
+    const response = await api('/stops/names?limit=1000');
+    const stops = response.data || [];
+    
+    console.log(`Recibidas ${stops.length} estaciones`);
+    
+    const select = document.getElementById('stopSelect');
+    if (!select) {
+      console.error('No se encontró el elemento stopSelect');
+      return;
     }
-    const date = document.getElementById("dateSelect")
-      ? document.getElementById("dateSelect").value
-      : null;
-    let schedUrl = `/schedule?stop_id=${encodeURIComponent(
-      id
-    )}&limit=${pageSize}`;
-    if (date) schedUrl += `&date=${encodeURIComponent(date)}`;
-    const sched = await api(schedUrl);
-    renderSchedule(sched.data || sched);
-  } catch (e) {
-    document.getElementById("infoContent").textContent = "Error: " + e.message;
-    console.error(e);
-  }
-  setLoading(false);
-}
-
-function showInfo(stop) {
-  const root = document.getElementById("infoContent");
-  root.innerHTML = "";
-  if (!stop) {
-    root.textContent = "No data";
-    return;
-  }
-  const h = document.createElement("h3");
-  h.textContent = stop.stop_name || "Stop";
-  root.appendChild(h);
-  ["stop_id", "stop_desc", "stop_lat", "stop_lon"].forEach((k) => {
-    if (stop[k] !== undefined) {
-      const p = document.createElement("p");
-      p.textContent = `${k}: ${stop[k]}`;
-      root.appendChild(p);
-    }
-  });
-}
-
-function renderSchedule(rows) {
-  const root = document.getElementById("scheduleContent");
-  root.innerHTML = "";
-  const table = document.createElement("table");
-  const thead = document.createElement("thead");
-  thead.innerHTML =
-    "<tr><th>Time</th><th>Trip</th><th>Route</th><th>Headsign</th></tr>";
-  table.appendChild(thead);
-  const tbody = document.createElement("tbody");
-  (rows || []).forEach((r) => {
-    const tr = document.createElement("tr");
-    const t = r.time || r.arrival_time || r.departure_time || "";
-    tr.innerHTML = `<td>${t}</td><td>${r.trip_id || ""}</td><td>${
-      r.route_short_name || r.route_id || ""
-    }</td><td>${r.trip_headsign || ""}</td>`;
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  root.appendChild(table);
-  // populate routes list from schedule
-  const routes = Array.from(
-    new Map(
-      (rows || []).map((r) => [r.route_id || r.route_short_name, r])
-    ).values()
-  );
-  const routesRoot = document.getElementById("routesContent");
-  if (routesRoot) {
-    routesRoot.innerHTML = "";
-    routes.forEach((rt) => {
-      const div = document.createElement("div");
-      div.className =
-        "mb-3 p-2 rounded-md border border-slate-100 dark:border-slate-700";
-      const header = document.createElement("div");
-      header.className = "flex items-center justify-between";
-      const left = document.createElement("div");
-      left.className = "flex items-center gap-3";
-      const badge = document.createElement("div");
-      badge.className =
-        "w-10 h-10 rounded-md bg-slate-700 text-white flex items-center justify-center font-semibold";
-      badge.textContent = rt.route_short_name || rt.route_id || "—";
-      const txt = document.createElement("div");
-      txt.innerHTML = `<div class="font-medium text-sm text-slate-900 dark:text-slate-100">${
-        rt.route_long_name || ""
-      }</div><div class="text-xs text-slate-500 dark:text-slate-400">${
-        rt.route_id || ""
-      }</div>`;
-      left.appendChild(badge);
-      left.appendChild(txt);
-      const actions = document.createElement("div");
-      const btn = document.createElement("button");
-      btn.className =
-        "px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-sm";
-      btn.textContent = "Ver recorrido";
-      actions.appendChild(btn);
-      header.appendChild(left);
-      header.appendChild(actions);
-      div.appendChild(header);
-      const container = document.createElement("div");
-      container.className =
-        "route-stops mt-2 text-sm text-slate-700 dark:text-slate-300";
-      div.appendChild(container);
-      routesRoot.appendChild(div);
-
-      // wire expand behavior
-      btn.addEventListener("click", async () => {
-        // toggle
-        if (expandedRoutes.has(rt.route_id)) {
-          expandedRoutes.delete(rt.route_id);
-          container.innerHTML = "";
-          return;
-        }
-        expandedRoutes.set(rt.route_id, container);
-        await fetchRouteStops(rt.route_id, container);
-      });
+    
+    select.innerHTML = '<option value="">-- Selecciona una estación --</option>';
+    
+    stops.forEach(stop => {
+      const option = document.createElement('option');
+      option.value = stop.stop_id;
+      option.textContent = stop.stop_name;
+      select.appendChild(option);
     });
+    
+    console.log(`Selector actualizado con ${stops.length} opciones`);
+    showToast(`${stops.length} estaciones cargadas`, 'success');
+  } catch (error) {
+    console.error('Error loading stops:', error);
+    showToast('Error al cargar estaciones', 'error');
+    
+    // Mantener opción de carga por si falla la API
+    const select = document.getElementById('stopSelect');
+    if (select) {
+      select.innerHTML = '<option value="">Error al cargar estaciones</option>';
+    }
   }
+  showLoading(false);
 }
 
-async function fetchRouteStops(routeId, container) {
-  container.innerHTML =
-    '<div class="text-xs text-slate-500">Cargando paradas…</div>';
-  try {
-    const res = await api(`/routes/${encodeURIComponent(routeId)}/stops`);
-    const rows = res.data || [];
-    // group by direction_id
-    const grouped = rows.reduce((acc, r) => {
-      const k = String(r.direction_id || 0);
-      (acc[k] || (acc[k] = [])).push(r);
-      return acc;
-    }, {});
-    container.innerHTML = "";
-    Object.keys(grouped)
-      .sort()
-      .forEach((dir) => {
-        const title = document.createElement("div");
-        title.className = "font-semibold mt-2";
-        title.textContent = dir === "0" ? "Ida" : "Vuelta";
-        container.appendChild(title);
-        const list = document.createElement("ol");
-        list.className = "pl-4 mt-1";
-        grouped[dir].forEach((s) => {
-          const li = document.createElement("li");
-          li.className = "py-1";
-          li.textContent = `${s.stop_name || s.stop_id}`;
-          list.appendChild(li);
-        });
-        container.appendChild(list);
-      });
-  } catch (e) {
-    container.innerHTML =
-      '<div class="text-xs text-red-500">Error al cargar paradas</div>';
-    console.error(e);
-  }
-}
-
-function setLoading(on) {
-  const s = document.getElementById("spinner");
-  if (!s) return;
-  s.style.display = on ? "inline" : "none";
-}
-
-window.addEventListener("load", () => {
-  init().catch((e) => {
-    console.error(e);
-    const info = document.getElementById("infoContent");
-    if (info) info.textContent = "Failed to load: " + e.message;
-  });
-});
-// Force dark theme only
-try {
-  document.documentElement.classList.add("dark");
-} catch (e) {}
-// hide dark toggle if present
-try {
-  const dt = document.getElementById("darkToggle");
-  if (dt) dt.style.display = "none";
-} catch (e) {}
-
-// Map helpers (Leaflet must be loaded via CDN in HTML)
-function ensureMap() {
-  if (map || typeof L === "undefined") return;
-  try {
-    map = L.map("map", { attributionControl: true }).setView(
-      [40.4168, -3.7038],
-      6
-    );
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
-  } catch (e) {
-    console.warn("Leaflet not available", e);
-    map = null;
-  }
-}
-
-function updateMap(lat, lon, label) {
-  ensureMap();
-  if (!map) return;
-  const ll = [lat, lon];
-  map.setView(ll, Math.max(map.getZoom(), 13));
-  if (mapMarker) {
-    mapMarker.setLatLng(ll);
-    mapMarker.bindPopup(label || "").openPopup();
+// ========================================
+// Event Listeners
+// ========================================
+function setupEventListeners() {
+  console.log('Configurando event listeners...');
+  
+  // Búsqueda con debounce
+  const searchBox = document.getElementById('searchBox');
+  if (searchBox) {
+    searchBox.addEventListener('input', (e) => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => performSearch(e.target.value), 300);
+    });
+    console.log('Search box listener configurado');
   } else {
-    mapMarker = L.marker(ll)
-      .addTo(map)
-      .bindPopup(label || "")
-      .openPopup();
+    console.error('No se encontró searchBox');
+  }
+  
+  // Selección de estación
+  const stopSelect = document.getElementById('stopSelect');
+  if (stopSelect) {
+    stopSelect.addEventListener('change', onStopChange);
+    console.log('Stop select listener configurado');
+  } else {
+    console.error('No se encontró stopSelect');
+  }
+  
+  // Botón de actualización
+  const refreshBtn = document.getElementById('refreshBtn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', refreshData);
+    console.log('Refresh button listener configurado');
+  } else {
+    console.error('No se encontró refreshBtn');
+  }
+  
+  // Auto-refresh toggle
+  const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+  if (autoRefreshToggle) {
+    autoRefreshToggle.addEventListener('click', toggleAutoRefresh);
+    console.log('Auto-refresh toggle listener configurado');
+  } else {
+    console.error('No se encontró autoRefreshToggle');
+  }
+  
+  // Cambio de fecha
+  const dateSelect = document.getElementById('dateSelect');
+  if (dateSelect) {
+    dateSelect.addEventListener('change', () => {
+      if (currentStop) refreshData();
+    });
+    console.log('Date select listener configurado');
+  } else {
+    console.error('No se encontró dateSelect');
+  }
+  
+  // Paginación
+  const prevPage = document.getElementById('prevPage');
+  const nextPage = document.getElementById('nextPage');
+  if (prevPage && nextPage) {
+    prevPage.addEventListener('click', () => changePage(-1));
+    nextPage.addEventListener('click', () => changePage(1));
+    console.log('Pagination listeners configurados');
+  } else {
+    console.error('No se encontraron botones de paginación');
   }
 }
 
-// initialize map early so tiles can load
-window.addEventListener("load", () => {
-  try {
-    ensureMap();
-  } catch (e) {
-    /* ignore */
+// ========================================
+// Búsqueda de estaciones
+// ========================================
+async function performSearch(query) {
+  const resultsDiv = document.getElementById('searchResults');
+  
+  if (!query || query.length < 2) {
+    resultsDiv.classList.add('hidden');
+    return;
   }
-});
+  
+  try {
+    const response = await api(`/stops/search?q=${encodeURIComponent(query)}&limit=20`);
+    const stops = response.data || [];
+    
+    if (stops.length === 0) {
+      resultsDiv.innerHTML = '<div class="p-4 text-slate-500">No se encontraron estaciones</div>';
+      resultsDiv.classList.remove('hidden');
+      return;
+    }
+    
+    resultsDiv.innerHTML = stops.map(stop => `
+      <div class="p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-200 dark:border-slate-700 transition-colors"
+           onclick="selectStopFromSearch('${stop.stop_id}', '${stop.stop_name.replace(/'/g, "\\'")}')">
+        <div class="font-semibold text-slate-800 dark:text-slate-200">${stop.stop_name}</div>
+        <div class="text-sm text-slate-500">ID: ${stop.stop_id}</div>
+      </div>
+    `).join('');
+    
+    resultsDiv.classList.remove('hidden');
+  } catch (error) {
+    console.error('Search error:', error);
+  }
+}
+
+function selectStopFromSearch(stopId, stopName) {
+  const select = document.getElementById('stopSelect');
+  select.value = stopId;
+  document.getElementById('searchBox').value = stopName;
+  document.getElementById('searchResults').classList.add('hidden');
+  onStopChange();
+}
+
+// ========================================
+// Cambio de estación seleccionada
+// ========================================
+async function onStopChange() {
+  const stopId = document.getElementById('stopSelect').value;
+  if (!stopId) {
+    currentStop = null;
+    return;
+  }
+  
+  showLoading(true);
+  try {
+    const response = await api(`/stops/${stopId}`);
+    currentStop = response.data;
+    
+    // Actualizar información
+    displayStopInfo(currentStop);
+    
+    // Actualizar mapa
+    if (currentStop.stop_lat && currentStop.stop_lon) {
+      updateMap(
+        parseFloat(currentStop.stop_lat),
+        parseFloat(currentStop.stop_lon),
+        currentStop.stop_name
+      );
+    }
+    
+    // Cargar datos
+    await refreshData();
+    
+  } catch (error) {
+    console.error('Error loading stop:', error);
+    showToast('Error al cargar la estación', 'error');
+  }
+  showLoading(false);
+}
+
+// ========================================
+// Actualizar datos
+// ========================================
+async function refreshData() {
+  if (!currentStop) return;
+  
+  const stopId = currentStop.stop_id;
+  const date = document.getElementById('dateSelect').value;
+  
+  if (!date) {
+    showToast('La fecha es obligatoria', 'warning');
+    return;
+  }
+  
+  showLoading(true);
+  
+  try {
+    // Cargar próximos trenes
+    await loadUpcomingTrains(stopId);
+    
+    // Cargar horarios completos
+    await loadSchedule(stopId, date);
+    
+  } catch (error) {
+    console.error('Error refreshing data:', error);
+    showToast('Error al actualizar datos', 'error');
+  }
+  
+  showLoading(false);
+}
+
+// ========================================
+// Cargar próximos trenes
+// ========================================
+async function loadUpcomingTrains(stopId) {
+  try {
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:00`;
+    
+    const response = await api(`/stops/${stopId}/upcoming?current_time=${currentTime}&limit=10`);
+    const data = response.data;
+    
+    // Actualizar salidas
+    displayDepartures(data.departures || []);
+    
+    // Actualizar llegadas
+    displayArrivals(data.arrivals || []);
+    
+  } catch (error) {
+    console.error('Error loading upcoming trains:', error);
+    document.getElementById('departuresContent').innerHTML = 
+      '<div class="text-center text-red-500 py-4">Error al cargar salidas</div>';
+    document.getElementById('arrivalsContent').innerHTML = 
+      '<div class="text-center text-red-500 py-4">Error al cargar llegadas</div>';
+  }
+}
+
+function displayDepartures(departures) {
+  const container = document.getElementById('departuresContent');
+  const count = document.getElementById('departuresCount');
+  count.textContent = departures.length;
+  
+  if (departures.length === 0) {
+    container.innerHTML = '<div class="text-center text-slate-500 py-8">No hay salidas próximas</div>';
+    return;
+  }
+  
+  container.innerHTML = departures.map(train => {
+    const isSoon = train.minutes_until <= 5;
+    return `
+      <div class="train-card bg-white dark:bg-slate-800 rounded-lg p-4 shadow-md">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-3">
+            <span class="route-badge">${train.route_short_name || 'N/A'}</span>
+            <div>
+              <div class="font-semibold text-slate-800 dark:text-slate-200">
+                ${train.trip_headsign || 'Destino no especificado'}
+              </div>
+              <div class="text-sm text-slate-500">Salida: ${train.scheduled_time}</div>
+            </div>
+          </div>
+          <span class="time-badge ${isSoon ? 'soon' : ''}">${train.minutes_until} min</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function displayArrivals(arrivals) {
+  const container = document.getElementById('arrivalsContent');
+  const count = document.getElementById('arrivalsCount');
+  count.textContent = arrivals.length;
+  
+  if (arrivals.length === 0) {
+    container.innerHTML = '<div class="text-center text-slate-500 py-8">No hay llegadas próximas</div>';
+    return;
+  }
+  
+  container.innerHTML = arrivals.map(train => {
+    const isSoon = train.minutes_until <= 5;
+    return `
+      <div class="train-card bg-white dark:bg-slate-800 rounded-lg p-4 shadow-md">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center gap-3">
+            <span class="route-badge">${train.route_short_name || 'N/A'}</span>
+            <div>
+              <div class="font-semibold text-slate-800 dark:text-slate-200">
+                ${train.trip_headsign || 'Origen no especificado'}
+              </div>
+              <div class="text-sm text-slate-500">Llegada: ${train.scheduled_time}</div>
+            </div>
+          </div>
+          <span class="time-badge ${isSoon ? 'soon' : ''}">${train.minutes_until} min</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ========================================
+// Cargar horarios completos
+// ========================================
+let currentPage = 0;
+const pageSize = 50;
+
+async function loadSchedule(stopId, date) {
+  try {
+    const response = await api(`/schedule?stop_id=${stopId}&date=${date}&limit=1000`);
+    window.allSchedule = response.data || [];
+    
+    displaySchedulePage();
+    
+  } catch (error) {
+    console.error('Error loading schedule:', error);
+    document.getElementById('scheduleContent').innerHTML = 
+      '<div class="text-center text-red-500 py-4">Error al cargar horarios</div>';
+  }
+}
+
+function displaySchedulePage() {
+  const container = document.getElementById('scheduleContent');
+  const allSchedule = window.allSchedule || [];
+  
+  if (allSchedule.length === 0) {
+    container.innerHTML = '<div class="text-center text-slate-500 py-8">No hay horarios disponibles</div>';
+    return;
+  }
+  
+  const start = currentPage * pageSize;
+  const end = start + pageSize;
+  const page = allSchedule.slice(start, end);
+  
+  const table = `
+    <table class="w-full">
+      <thead class="bg-slate-100 dark:bg-slate-700">
+        <tr>
+          <th class="px-4 py-2 text-left">Hora</th>
+          <th class="px-4 py-2 text-left">Línea</th>
+          <th class="px-4 py-2 text-left">Viaje</th>
+          <th class="px-4 py-2 text-left">Servicio</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${page.map((row, i) => `
+          <tr class="${i % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-slate-50 dark:bg-slate-750'}">
+            <td class="px-4 py-2 font-semibold">${row.arrival_time || row.departure_time || '-'}</td>
+            <td class="px-4 py-2">
+              <span class="route-badge text-xs">${row.route_short_name || '-'}</span>
+            </td>
+            <td class="px-4 py-2 text-sm text-slate-600 dark:text-slate-400">${row.trip_id || '-'}</td>
+            <td class="px-4 py-2 text-sm text-slate-600 dark:text-slate-400">${row.service_date || '-'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div class="mt-4 text-center text-sm text-slate-600 dark:text-slate-400">
+      Mostrando ${start + 1} - ${Math.min(end, allSchedule.length)} de ${allSchedule.length} horarios
+    </div>
+  `;
+  
+  container.innerHTML = table;
+}
+
+function changePage(direction) {
+  const allSchedule = window.allSchedule || [];
+  const maxPage = Math.ceil(allSchedule.length / pageSize) - 1;
+  
+  currentPage = Math.max(0, Math.min(maxPage, currentPage + direction));
+  displaySchedulePage();
+}
+
+// ========================================
+// Mostrar información de la estación
+// ========================================
+function displayStopInfo(stop) {
+  const infoContent = document.getElementById('infoContent');
+  
+  infoContent.innerHTML = `
+    <div class="space-y-3">
+      <div class="p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+        <div class="text-sm text-slate-600 dark:text-slate-400">ID</div>
+        <div class="font-semibold text-slate-800 dark:text-slate-200">${stop.stop_id}</div>
+      </div>
+      <div class="p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+        <div class="text-sm text-slate-600 dark:text-slate-400">Nombre</div>
+        <div class="font-semibold text-slate-800 dark:text-slate-200">${stop.stop_name}</div>
+      </div>
+      ${stop.stop_lat ? `
+        <div class="p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+          <div class="text-sm text-slate-600 dark:text-slate-400">Coordenadas</div>
+          <div class="font-semibold text-slate-800 dark:text-slate-200">${stop.stop_lat}, ${stop.stop_lon}</div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+  
+  // Cargar rutas disponibles
+  loadRoutesForStop(stop.stop_id);
+}
+
+async function loadRoutesForStop(stopId) {
+  try {
+    const response = await api(`/schedule?stop_id=${stopId}&limit=100`);
+    const schedule = response.data || [];
+    
+    // Extraer rutas únicas
+    const uniqueRoutes = [...new Set(schedule.map(s => s.route_short_name || s.route_id).filter(Boolean))];
+    
+    const routesContent = document.getElementById('routesContent');
+    if (uniqueRoutes.length === 0) {
+      routesContent.innerHTML = '<div class="text-slate-500 text-sm">No hay rutas disponibles</div>';
+      return;
+    }
+    
+    routesContent.innerHTML = uniqueRoutes.map(route => `
+      <span class="inline-block route-badge text-sm m-1">${route}</span>
+    `).join('');
+    
+  } catch (error) {
+    console.error('Error loading routes:', error);
+  }
+}
+
+// ========================================
+// Auto-refresh
+// ========================================
+function toggleAutoRefresh() {
+  const icon = document.getElementById('autoRefreshIcon');
+  
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+    icon.textContent = '⏸️';
+    showToast('Auto-actualización desactivada', 'info');
+  } else {
+    autoRefreshInterval = setInterval(() => {
+      if (currentStop) refreshData();
+    }, 30000); // 30 segundos
+    icon.textContent = '▶️';
+    showToast('Auto-actualización activada (30s)', 'success');
+  }
+}
+
+// ========================================
+// UI Helpers
+// ========================================
+function showLoading(show) {
+  const overlay = document.getElementById('loadingOverlay');
+  if (show) {
+    overlay.classList.remove('hidden');
+  } else {
+    overlay.classList.add('hidden');
+  }
+}
+
+function showToast(message, type = 'info') {
+  const colors = {
+    success: 'bg-green-500',
+    error: 'bg-red-500',
+    warning: 'bg-yellow-500',
+    info: 'bg-blue-500'
+  };
+  
+  const toast = document.createElement('div');
+  toast.className = `fixed bottom-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-slide-in`;
+  toast.textContent = message;
+  
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(20px)';
+    toast.style.transition = 'all 0.3s ease-out';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
