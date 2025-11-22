@@ -189,17 +189,31 @@ class GTFSStore:
             # dynamic: compute active service_ids
             active_sids = None
             if date_key:
-                # services from calendar matching weekday and range
-                # Construct union of calendar-based and calendar_dates additions, then remove exceptions
-                sql_active = (
-                    "WITH base AS ("
-                    " SELECT service_id FROM calendar WHERE (start_date IS NULL OR start_date <= ?) AND (end_date IS NULL OR end_date >= ?) "
-                    ") "
-                    ", added AS (SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 1)"
-                    ", removed AS (SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 2)"
-                    " SELECT service_id FROM (SELECT service_id FROM base UNION ALL SELECT service_id FROM added) EXCEPT SELECT service_id FROM removed"
-                )
+                # Compute weekday for the date (0=Monday, 6=Sunday)
+                import datetime
                 try:
+                    year = int(date_key[0:4])
+                    month = int(date_key[4:6])
+                    day = int(date_key[6:8])
+                    dt = datetime.date(year, month, day)
+                    weekday = dt.weekday()  # 0=Monday, 6=Sunday
+                    
+                    # Map weekday to GTFS calendar columns
+                    weekday_cols = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+                    weekday_col = weekday_cols[weekday]
+                    
+                    # services from calendar matching weekday and range
+                    sql_active = (
+                        f"WITH base AS ("
+                        f" SELECT service_id FROM calendar "
+                        f" WHERE (start_date IS NULL OR start_date <= ?) "
+                        f" AND (end_date IS NULL OR end_date >= ?) "
+                        f" AND {weekday_col} = 1"
+                        f") "
+                        ", added AS (SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 1)"
+                        ", removed AS (SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 2)"
+                        " SELECT service_id FROM (SELECT service_id FROM base UNION ALL SELECT service_id FROM added) EXCEPT SELECT service_id FROM removed"
+                    )
                     cur.execute(sql_active, (date_key, date_key, date_key, date_key))
                     active_sids = [str(r[0]) for r in cur.fetchall()]
                 except Exception:
@@ -207,7 +221,7 @@ class GTFSStore:
 
             # Build main query joining stop_times -> trips -> routes
             q = (
-                "SELECT st.trip_id, st.arrival_time, st.departure_time, st.stop_id, st.stop_sequence, t.route_id, r.route_short_name "
+                "SELECT st.trip_id, st.arrival_time, st.departure_time, st.stop_id, st.stop_sequence, t.route_id, r.route_short_name, t.trip_headsign "
                 "FROM stop_times st "
                 "JOIN trips t ON st.trip_id = t.trip_id "
                 "LEFT JOIN routes r ON t.route_id = r.route_id "
