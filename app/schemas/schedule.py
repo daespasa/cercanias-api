@@ -6,7 +6,7 @@ class ScheduleEntry(BaseModel):
     trip_id: str
     arrival_time: Optional[str] = None
     departure_time: Optional[str] = None
-    stop_id: Optional[str] = None
+    stop_id: Optional[int] = None
     stop_sequence: Optional[int] = None
     route_id: Optional[str] = None
     route_short_name: Optional[str] = None
