@@ -194,18 +194,6 @@ Errores siguen el formato **RFC 7807 Problem Details**, por ejemplo:
   "type": "about:blank",
   "title": "Unauthorized",
   "detail": "Missing or invalid API key",
-
----
-
-## 🧾 Changelog
-
-Ver el historial de cambios en [`CHANGELOG.md`](./CHANGELOG.md).
-
-## 👥 Contributors
-
-Lista de colaboradores en [`CONTRIBUTORS.md`](./CONTRIBUTORS.md).
-
-Si quieres que documente los comandos de despliegue/cron exactos que usas para tus snapshots de 30s (naming, retención, limpieza), dime el patrón de nombres y te genero un ejemplo de script PowerShell/Batch o systemd timer.
   "status": 401
 }
 ```
