@@ -223,3 +223,19 @@ def get_schedule(stop_id: Optional[str] = None, route_id: Optional[str] = None, 
         except Exception:
             pass
     return gtfs_manager.get_schedule(stop_id=stop_id, route_id=route_id, date=date, limit=limit)
+
+
+def get_upcoming_trains(stop_id: str, current_time: Optional[str] = None, limit: int = 10):
+    """Get upcoming departures and arrivals for a stop with minutes until departure/arrival."""
+    db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
+    if os.path.exists(db_path):
+        store = GTFSStore(db_path)
+        return store.get_upcoming_trains(stop_id=stop_id, current_time=current_time, limit=limit)
+    # No fallback to manager for this specialized query
+    return {
+        'stop_id': stop_id,
+        'stop_name': None,
+        'current_time': current_time or '00:00:00',
+        'departures': [],
+        'arrivals': []
+    }
