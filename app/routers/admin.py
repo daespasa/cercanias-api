@@ -3,7 +3,7 @@ from app.core.gtfs_manager import gtfs_manager
 from app.core.security import api_key_required
 from app.utils.response import success_response
 
-router = APIRouter(prefix="/admin", tags=["admin"])  # protected by API key dependency when included
+router = APIRouter(prefix="/admin", tags=["Admin"])  # protected by API key dependency when included
 
 
 @router.get("/gtfs/meta", summary="GTFS metadata", description="Devuelve metadata persistida y en memoria sobre el feed GTFS.")
