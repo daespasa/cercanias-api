@@ -1,23 +1,28 @@
 # 🚆 Cercanías API — FastAPI GTFS Service
 
+[![Build Status](https://img.shields.io/github/actions/workflow/status/daespasa/cercanias-api/ci.yml?branch=main&label=build&logo=github)](https://github.com/daespasa/cercanias-api/actions)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/daespasa/cercanias-api/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org)
+
 API moderna y optimizada construida con **FastAPI** para consultar horarios, rutas y paradas de **Renfe Cercanías** utilizando datos **GTFS** oficiales.
 
 Incluye:
 
-* Loader GTFS completo con validación, normalización y metadatos persistidos.
-* Filtrado por fecha real usando `calendar.txt` y `calendar_dates.txt`.
-* Endpoints REST con respuestas estandarizadas.
-* Seguridad opcional mediante `X-API-Key`.
-* Tests unitarios incluidos.
-* Preparada para producción con Uvicorn y estructura profesional.
+- Loader GTFS completo con validación, normalización y metadatos persistidos.
+- Filtrado por fecha real usando `calendar.txt` y `calendar_dates.txt`.
+- Endpoints REST con respuestas estandarizadas.
+- Seguridad opcional mediante `X-API-Key`.
+- Tests unitarios incluidos.
+- Preparada para producción con Uvicorn y estructura profesional.
 
 ---
 
 ## 📦 Requisitos
 
-* Python **3.9+**
-* (Opcional pero recomendado) **entorno virtual** `venv`
-* Archivo GTFS `fomento_transit.zip`
+- Python **3.9+**
+- (Opcional pero recomendado) **entorno virtual** `venv`
+- Archivo GTFS `fomento_transit.zip`
 
 ---
 
@@ -144,17 +149,17 @@ Detalle de rutas + información GTFS.
 
 Consulta de horarios combinando:
 
-* `stop_times`
-* `trips`
-* `routes`
-* `calendar` (días activos)
-* `calendar_dates` (excepciones)
+- `stop_times`
+- `trips`
+- `routes`
+- `calendar` (días activos)
+- `calendar_dates` (excepciones)
 
 Parámetros:
 
-* `stop_id`
-* `route_id`
-* `date=YYYY-MM-DD`
+- `stop_id`
+- `route_id`
+- `date=YYYY-MM-DD`
 
 Ejemplo:
 
@@ -166,11 +171,11 @@ curl "http://127.0.0.1:8000/schedule/?stop_id=65000&date=2025-06-01"
 
 Metadatos del GTFS:
 
-* ETAG
-* Last-Modified
-* Hash
-* Fecha de carga
-* Conteo de registros
+- ETAG
+- Last-Modified
+- Hash
+- Fecha de carga
+- Conteo de registros
 
 ---
 
@@ -189,6 +194,18 @@ Errores siguen el formato **RFC 7807 Problem Details**, por ejemplo:
   "type": "about:blank",
   "title": "Unauthorized",
   "detail": "Missing or invalid API key",
+
+---
+
+## 🧾 Changelog
+
+Ver el historial de cambios en [`CHANGELOG.md`](./CHANGELOG.md).
+
+## 👥 Contributors
+
+Lista de colaboradores en [`CONTRIBUTORS.md`](./CONTRIBUTORS.md).
+
+Si quieres que documente los comandos de despliegue/cron exactos que usas para tus snapshots de 30s (naming, retención, limpieza), dime el patrón de nombres y te genero un ejemplo de script PowerShell/Batch o systemd timer.
   "status": 401
 }
 ```
@@ -204,10 +221,10 @@ pytest -q
 
 Los tests incluyen:
 
-* Mock del cargador GTFS
-* Validación de endpoints
-* Manejo de fechas y calendar.txt
-* Metadatos
+- Mock del cargador GTFS
+- Validación de endpoints
+- Manejo de fechas y calendar.txt
+- Metadatos
 
 ---
 
@@ -236,11 +253,11 @@ cercanias-api/
 
 ## 🚧 Roadmap (ideas futuras)
 
-* Cache Redis opcional
-* GTFS-RT (vehículos, alertas, retrasos)
-* Endpoint de proximidad geográfica
-* Históricos y agregaciones
-* CLI: `cercanias-cli search --stop "Nord"`
+- Cache Redis opcional
+- GTFS-RT (vehículos, alertas, retrasos)
+- Endpoint de proximidad geográfica
+- Históricos y agregaciones
+- CLI: `cercanias-cli search --stop "Nord"`
 
 ---
 
