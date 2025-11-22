@@ -65,6 +65,37 @@ class GTFSStore:
         finally:
             conn.close()
 
+    def get_schedule_by_stop_date(self, stop_id: str, date: str, limit: int = 200) -> List[Dict]:
+        """Convenience method to query the materialized `schedules` table by stop and date.
+
+        Accepts date in YYYY-MM-DD or YYYYMMDD.
+        """
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            # normalize date
+            if '-' in date:
+                date_iso = date
+                date_key = date.replace('-', '')
+            else:
+                date_key = date
+                date_iso = f"{date[0:4]}-{date[4:6]}-{date[6:8]}"
+
+            # if schedules exists, prefer it
+            try:
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schedules'")
+                if cur.fetchone():
+                    q = "SELECT trip_id, arrival_time, departure_time, stop_id, stop_sequence, route_id, route_short_name, service_date FROM schedules WHERE service_date = ? AND stop_id = ? ORDER BY route_id, stop_sequence LIMIT ?"
+                    cur.execute(q, (date_iso, str(stop_id), limit))
+                    return [dict(r) for r in cur.fetchall()]
+            except Exception:
+                pass
+
+            # fallback to dynamic query
+            return self.get_schedule(stop_id=stop_id, date=date, limit=limit)
+        finally:
+            conn.close()
+
     def get_schedule(self, stop_id: Optional[str] = None, route_id: Optional[str] = None, date: Optional[str] = None, limit: int = 200) -> List[Dict]:
         """Query schedule for stop and/or route on a date.
 

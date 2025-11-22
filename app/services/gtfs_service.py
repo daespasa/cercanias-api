@@ -132,6 +132,7 @@ def get_schedule(stop_id: Optional[str] = None, route_id: Optional[str] = None, 
         has_stop_times = gtfs_manager.data.get("stop_times") is not None and not gtfs_manager.data.get("stop_times").empty
         has_trips = gtfs_manager.data.get("trips") is not None and not gtfs_manager.data.get("trips").empty
         if has_stop_times and has_trips:
+            # If the in-memory manager has data (tests or freshly loaded), prefer it.
             return gtfs_manager.get_schedule(stop_id=stop_id, route_id=route_id, date=date, limit=limit)
     except Exception:
         pass
