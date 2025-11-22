@@ -16,15 +16,44 @@ def _zip_path() -> str:
 
 
 def load_if_present():
-    """Intenta cargar el ZIP GTFS si existe en `ZIP_PATH`.
-
-    Devuelve True si se cargó, False si no existe el archivo.
+    """Intenta cargar GTFS desde directorio o ZIP si existe.
+    
+    Si AUTO_DOWNLOAD_GTFS está habilitado, no hace nada ya que el downloader
+    se encarga de descargar, extraer y construir la BD automáticamente.
+    
+    Prioridad: directorio fomento_transit -> ZIP
+    Devuelve True si se cargó, False si no existe.
     """
     import logging
 
     logger = logging.getLogger("cercanias")
+    
+    # If auto-download is enabled, let the downloader handle everything
+    if settings.AUTO_DOWNLOAD_GTFS:
+        logger.info("AUTO_DOWNLOAD_GTFS is enabled, skipping manual load (downloader will handle it)")
+        return True
+    
+    # Check for uncompressed directory first
+    gtfs_dir = os.path.join(settings.GTFS_DATA_DIR or "data/gtfs", "fomento_transit")
+    db_dir = settings.GTFS_DATA_DIR or "data/gtfs"
+    db_tmp = os.path.join(db_dir, "gtfs.db.tmp")
+    db_final = os.path.join(db_dir, "gtfs.db")
+    
+    if os.path.isdir(gtfs_dir):
+        try:
+            # Load from directory into sqlite directly
+            from app.core.gtfs_sqlite_loader import build_sqlite_from_directory
+            os.makedirs(db_dir, exist_ok=True)
+            build_sqlite_from_directory(gtfs_dir, db_tmp)
+            os.replace(db_tmp, db_final)
+            logger.info(f"GTFS loaded from directory {gtfs_dir} into SQLite DB {db_final}")
+            return True
+        except Exception as e:
+            logger.exception(f"Failed to load GTFS from directory {gtfs_dir}: {e}")
+            return False
+    
+    # Fallback to ZIP loading
     zip_path = _zip_path()
-    # ensure directory exists for clarity (don't create the zip if missing)
     try:
         os.makedirs(os.path.dirname(zip_path) or ".", exist_ok=True)
     except Exception:
@@ -36,16 +65,11 @@ def load_if_present():
             # attempt to build a sqlite DB alongside the zip for faster queries
             try:
                 from app.core.gtfs_sqlite_loader import build_sqlite_from_zip
-                db_dir = settings.GTFS_DATA_DIR or "data"
-                db_tmp = os.path.join(db_dir, "gtfs.db.tmp")
-                db_final = os.path.join(db_dir, "gtfs.db")
                 try:
                     build_sqlite_from_zip(zip_path, db_tmp)
-                    # atomic replace
                     os.replace(db_tmp, db_final)
                     logger.info(f"GTFS sqlite DB built at {db_final}")
                 except Exception:
-                    # ignore loader errors; manager is already loaded
                     logger.debug("Failed to build sqlite DB for GTFS", exc_info=True)
             except Exception:
                 pass
@@ -54,7 +78,7 @@ def load_if_present():
             logger.exception(f"Failed to load GTFS from {zip_path}: {e}")
             return False
     else:
-        logger.warning(f"GTFS zip not found at {zip_path}; manager left empty")
+        logger.warning(f"GTFS not found at {gtfs_dir} or {zip_path}; no data loaded")
         return False
 
 
