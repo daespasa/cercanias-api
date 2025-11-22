@@ -21,7 +21,9 @@ class Settings:
         self.GTFS_DATA_DIR: str = os.getenv("GTFS_DATA_DIR", "data/gtfs")
         # GTFS filename (relative to GTFS_DATA_DIR if GTFS_PATH is not absolute)
         self.GTFS_PATH: str = os.getenv("GTFS_PATH", "fomento_transit.zip")
-        self.API_KEY: Optional[str] = os.getenv("API_KEY")
+        # API_KEY: treat empty string as None
+        api_key = os.getenv("API_KEY")
+        self.API_KEY: Optional[str] = api_key if api_key else None
 
         # Logging
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
@@ -34,7 +36,7 @@ class Settings:
             "GTFS_ZIP_URL",
             "https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip",
         )
-        self.AUTO_DOWNLOAD_GTFS: bool = _bool_env("AUTO_DOWNLOAD_GTFS", False)
+        self.AUTO_DOWNLOAD_GTFS: bool = _bool_env("AUTO_DOWNLOAD_GTFS", True)
         try:
             self.GTFS_DOWNLOAD_INTERVAL_HOURS: int = int(os.getenv("GTFS_DOWNLOAD_INTERVAL_HOURS", "24"))
         except Exception:
