@@ -60,13 +60,7 @@ def load_if_present():
 
 
 def get_stops(limit: Optional[int] = None):
-    # If the in-memory manager already has stops loaded, prefer it (useful for tests).
-    try:
-        if gtfs_manager.data.get("stops") is not None and not gtfs_manager.data.get("stops").empty:
-            return gtfs_manager.get_stops(limit=limit)
-    except Exception:
-        pass
-    # Otherwise prefer sqlite store if available
+    # Prefer sqlite store if available (do not use pre-injected manager for reads)
     db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
     if os.path.exists(db_path):
         try:
@@ -74,16 +68,47 @@ def get_stops(limit: Optional[int] = None):
             return store.get_stops(limit=limit or 1000)
         except Exception:
             pass
+    # fallback to manager only if sqlite not present
     return gtfs_manager.get_stops(limit=limit)
 
 
-def get_stop(stop_id: str):
-    # Prefer manager data if present (tests inject data there)
+def search_stops(name_query: str, limit: int = 100):
+    """Search for stops by name (case-insensitive). Returns list of stop dicts."""
+    # Prefer sqlite store for searches
+    db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
+    if os.path.exists(db_path):
+        try:
+            store = GTFSStore(db_path)
+            return store.search_stops(name_query=name_query, limit=limit)
+        except Exception:
+            pass
+    # fallback to manager only if sqlite not present
     try:
-        if gtfs_manager.data.get("stops") is not None and not gtfs_manager.data.get("stops").empty:
-            return gtfs_manager.get_stop(stop_id)
+        return gtfs_manager.search_stops(name_query=name_query, limit=limit)
     except Exception:
-        pass
+        return []
+
+
+def list_stop_names(limit: int = 1000):
+    """Return a list of available stops (stop_id, stop_name)."""
+    # Prefer sqlite store for listing stop names
+    db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
+    if os.path.exists(db_path):
+        try:
+            store = GTFSStore(db_path)
+            return store.list_stop_names(limit=limit)
+        except Exception:
+            pass
+    # fallback to manager
+    try:
+        stops = gtfs_manager.get_stops(limit=limit)
+        return [{"stop_id": s.get("stop_id"), "stop_name": s.get("stop_name")} for s in stops]
+    except Exception:
+        return []
+
+
+def get_stop(stop_id: str):
+    # Prefer sqlite store for single stop lookup
     db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
     if os.path.exists(db_path):
         try:
@@ -95,11 +120,7 @@ def get_stop(stop_id: str):
 
 
 def get_routes():
-    try:
-        if gtfs_manager.data.get("routes") is not None and not gtfs_manager.data.get("routes").empty:
-            return gtfs_manager.get_routes()
-    except Exception:
-        pass
+    # Prefer sqlite for routes
     db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
     if os.path.exists(db_path):
         try:
@@ -111,11 +132,7 @@ def get_routes():
 
 
 def get_route(route_id: str):
-    try:
-        if gtfs_manager.data.get("routes") is not None and not gtfs_manager.data.get("routes").empty:
-            return gtfs_manager.get_route(route_id)
-    except Exception:
-        pass
+    # Prefer sqlite for route metadata
     db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
     if os.path.exists(db_path):
         try:
@@ -126,16 +143,54 @@ def get_route(route_id: str):
     return gtfs_manager.get_route(route_id)
 
 
-def get_schedule(stop_id: Optional[str] = None, route_id: Optional[str] = None, date: Optional[str] = None, limit: int = 200) -> List[dict]:
-    # Prefer pre-injected manager data when present (tests)
+def get_route_stops(route_id: str):
+    """Return ordered stops for a route. Prefer manager when populated, otherwise sqlite."""
+    # Prefer sqlite store for route stops (avoid slow in-memory joins when DB present)
+    db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
+    if os.path.exists(db_path):
+        try:
+            store = GTFSStore(db_path)
+            return store.get_route_stops(route_id)
+        except Exception:
+            pass
+    # fallback: try to build from manager stop_times/trips
     try:
-        has_stop_times = gtfs_manager.data.get("stop_times") is not None and not gtfs_manager.data.get("stop_times").empty
-        has_trips = gtfs_manager.data.get("trips") is not None and not gtfs_manager.data.get("trips").empty
-        if has_stop_times and has_trips:
-            # If the in-memory manager has data (tests or freshly loaded), prefer it.
-            return gtfs_manager.get_schedule(stop_id=stop_id, route_id=route_id, date=date, limit=limit)
+        if hasattr(gtfs_manager, 'data'):
+            trips = gtfs_manager.data.get('trips')
+            stop_times = gtfs_manager.data.get('stop_times')
+            stops = gtfs_manager.data.get('stops')
+            if trips is not None and stop_times is not None:
+                # join in pandas if available
+                try:
+                    merged = stop_times.merge(trips[['trip_id','direction_id','route_id']], on='trip_id')
+                    merged = merged[merged['route_id'] == route_id]
+                    merged = merged.sort_values(['direction_id','stop_sequence'])
+                    out = []
+                    for _, row in merged.iterrows():
+                        sid = row['stop_id']
+                        srow = None
+                        if stops is not None:
+                            try:
+                                srow = stops[stops['stop_id'] == sid].to_dict('records')[0]
+                            except Exception:
+                                srow = None
+                        out.append({
+                            'direction_id': int(row.get('direction_id') if row.get('direction_id') is not None else 0),
+                            'stop_sequence': int(row.get('stop_sequence') if row.get('stop_sequence') is not None else 0),
+                            'stop_id': sid,
+                            'stop_name': srow.get('stop_name') if srow else None,
+                            'stop_lat': srow.get('stop_lat') if srow else None,
+                            'stop_lon': srow.get('stop_lon') if srow else None,
+                        })
+                    return out
+                except Exception:
+                    pass
     except Exception:
         pass
+    return []
+
+
+def get_schedule(stop_id: Optional[str] = None, route_id: Optional[str] = None, date: Optional[str] = None, limit: int = 200) -> List[dict]:
     db_path = os.path.join(settings.GTFS_DATA_DIR or "data", "gtfs.db")
     if os.path.exists(db_path):
         try:

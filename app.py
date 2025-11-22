@@ -152,6 +152,8 @@ app.include_router(schedule.router, dependencies=[Depends(api_key_required)])
 app.include_router(realtime.router, dependencies=[Depends(api_key_required)])
 from app.routers import admin as admin_router
 app.include_router(admin_router.router, dependencies=[Depends(api_key_required)])
+from app.routers import ui as ui_router
+app.include_router(ui_router.router)
 
 
 @app.middleware("http")

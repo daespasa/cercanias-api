@@ -46,8 +46,52 @@ class GTFSStore:
         finally:
             conn.close()
 
+    def get_route_stops(self, route_id: str) -> List[Dict]:
+        """Return stops for a route grouped by direction_id.
+
+        Returns a list of dicts with keys: direction_id, stop_sequence, stop_id, stop_name, stop_lat, stop_lon.
+        The result is ordered by direction_id and stop_sequence.
+        """
+        q = (
+            "SELECT t.direction_id as direction_id, st.stop_sequence as stop_sequence, st.stop_id as stop_id, s.stop_name as stop_name, s.stop_lat as stop_lat, s.stop_lon as stop_lon "
+            "FROM trips t JOIN stop_times st ON t.trip_id = st.trip_id LEFT JOIN stops s ON st.stop_id = s.stop_id "
+            "WHERE t.route_id = ? "
+            "ORDER BY t.direction_id, st.stop_sequence"
+        )
+        conn = self._connect()
+        try:
+            cur = conn.execute(q, (route_id,))
+            rows = [dict(r) for r in cur.fetchall()]
+            return rows
+        finally:
+            conn.close()
+
     def get_stops(self, limit: int = 1000) -> List[Dict]:
         q = "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops LIMIT ?"
+        conn = self._connect()
+        try:
+            cur = conn.execute(q, (limit,))
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def search_stops(self, name_query: str, limit: int = 100) -> List[Dict]:
+        """Case-insensitive search on stop_name using LIKE.
+
+        Returns rows with stop_id, stop_name, stop_lat, stop_lon.
+        """
+        q = "SELECT stop_id, stop_name, stop_lat, stop_lon FROM stops WHERE lower(stop_name) LIKE ? ORDER BY stop_name LIMIT ?"
+        conn = self._connect()
+        try:
+            term = f"%{name_query.lower()}%"
+            cur = conn.execute(q, (term, limit))
+            return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def list_stop_names(self, limit: int = 1000) -> List[Dict]:
+        """Return distinct stop_id and stop_name pairs ordered by stop_name."""
+        q = "SELECT DISTINCT stop_id, stop_name FROM stops ORDER BY stop_name LIMIT ?"
         conn = self._connect()
         try:
             cur = conn.execute(q, (limit,))

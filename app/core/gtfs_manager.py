@@ -296,6 +296,33 @@ class GTFSManager:
             df2 = df2.head(limit)
         return df2.to_dict(orient="records")
 
+    def search_stops(self, name_query: str, limit: int = 100) -> List[Dict]:
+        """Simple case-insensitive search for stops by `stop_name` inside the manager.
+
+        Returns list of dicts with stop_id, stop_name, stop_lat, stop_lon.
+        """
+        df = self.data.get("stops", pd.DataFrame())
+        if df.empty or "stop_name" not in df.columns:
+            return []
+        try:
+            mask = df["stop_name"].astype(str).str.lower().str.contains(str(name_query).lower())
+            res = df.loc[mask, [c for c in ["stop_id", "stop_name", "stop_lat", "stop_lon"] if c in df.columns]]
+            return res.head(limit).to_dict(orient="records")
+        except Exception:
+            return []
+
+    def list_stop_names(self, limit: int = 1000) -> List[Dict]:
+        """Return distinct stop_id/stop_name pairs from the manager."""
+        df = self.data.get("stops", pd.DataFrame())
+        if df.empty or "stop_name" not in df.columns:
+            return []
+        try:
+            cols = [c for c in ["stop_id", "stop_name"] if c in df.columns]
+            res = df[cols].drop_duplicates(subset=["stop_id", "stop_name"]).sort_values(by=["stop_name"]).head(limit)
+            return res.to_dict(orient="records")
+        except Exception:
+            return []
+
     def get_stop(self, stop_id: str) -> Optional[Dict]:
         df = self.data.get("stops", pd.DataFrame())
         if df.empty or "stop_id" not in df.columns:
