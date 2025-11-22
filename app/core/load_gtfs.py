@@ -1,3 +1,4 @@
+import os
 import zipfile
 import io
 import re
@@ -67,24 +68,100 @@ def _clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def load_gtfs_from_directory(dir_path: str) -> Dict[str, pd.DataFrame]:
+    """Carga archivos GTFS comunes desde un directorio descomprimido y devuelve dataframes.
+
+    Soporta todos los archivos GTFS estándar: stops, routes, trips, stop_times, calendar,
+    calendar_dates, agency, shapes, transfers.
+    Se limpian los textos de cada fichero para eliminar espacios raros y caracteres de control.
+    """
+    # Define columns that should be kept as strings (IDs often have leading zeros)
+    dtype_specs = {
+        'stops.txt': {'stop_id': str, 'parent_station': str, 'zone_id': str},
+        'routes.txt': {'route_id': str, 'agency_id': str},
+        'trips.txt': {'route_id': str, 'service_id': str, 'trip_id': str, 'shape_id': str},
+        'stop_times.txt': {'trip_id': str, 'stop_id': str},
+        'calendar.txt': {'service_id': str},
+        'calendar_dates.txt': {'service_id': str},
+        'agency.txt': {'agency_id': str},
+        'shapes.txt': {'shape_id': str},
+        'transfers.txt': {'from_stop_id': str, 'to_stop_id': str, 'from_route_id': str, 'to_route_id': str, 'from_trip_id': str, 'to_trip_id': str},
+    }
+    
+    dfs = {}
+    # Load all standard GTFS files
+    gtfs_files = [
+        "agency.txt", "stops.txt", "routes.txt", "trips.txt", 
+        "stop_times.txt", "calendar.txt", "calendar_dates.txt",
+        "shapes.txt", "transfers.txt"
+    ]
+    
+    for name in gtfs_files:
+        file_path = os.path.join(dir_path, name)
+        if os.path.exists(file_path):
+            try:
+                dtype = dtype_specs.get(name, None)
+                df = pd.read_csv(file_path, encoding="utf-8", low_memory=False, dtype=dtype)
+            except Exception:
+                # retry with latin-1 encoding for some GTFS files
+                try:
+                    dtype = dtype_specs.get(name, None)
+                    df = pd.read_csv(file_path, encoding="latin-1", low_memory=False, dtype=dtype)
+                except Exception:
+                    continue
+
+            # Clean dataframe text fields
+            try:
+                df = _clean_dataframe(df)
+            except Exception:
+                # best-effort: if cleaning fails, keep original df
+                pass
+
+            dfs[name.replace(".txt", "")] = df
+    return dfs
+
+
 def load_gtfs_from_zip(zip_path: str) -> Dict[str, pd.DataFrame]:
     """Carga archivos GTFS comunes desde un ZIP y devuelve dataframes.
 
-    Soporta: stops.txt, routes.txt, trips.txt, stop_times.txt, calendar.txt, agency.txt
+    Soporta todos los archivos GTFS estándar: stops, routes, trips, stop_times, calendar,
+    calendar_dates, agency, shapes, transfers.
     Se limpian los textos de cada fichero para eliminar espacios raros y caracteres de control.
     """
+    # Define columns that should be kept as strings (IDs often have leading zeros)
+    dtype_specs = {
+        'stops.txt': {'stop_id': str, 'parent_station': str, 'zone_id': str},
+        'routes.txt': {'route_id': str, 'agency_id': str},
+        'trips.txt': {'route_id': str, 'service_id': str, 'trip_id': str, 'shape_id': str},
+        'stop_times.txt': {'trip_id': str, 'stop_id': str},
+        'calendar.txt': {'service_id': str},
+        'calendar_dates.txt': {'service_id': str},
+        'agency.txt': {'agency_id': str},
+        'shapes.txt': {'shape_id': str},
+        'transfers.txt': {'from_stop_id': str, 'to_stop_id': str, 'from_route_id': str, 'to_route_id': str, 'from_trip_id': str, 'to_trip_id': str},
+    }
+    
     dfs = {}
+    # Load all standard GTFS files
+    gtfs_files = [
+        "agency.txt", "stops.txt", "routes.txt", "trips.txt", 
+        "stop_times.txt", "calendar.txt", "calendar_dates.txt",
+        "shapes.txt", "transfers.txt"
+    ]
+    
     with zipfile.ZipFile(zip_path, "r") as z:
-        for name in ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt", "calendar.txt", "calendar_dates.txt", "agency.txt"]:
+        for name in gtfs_files:
             if name in z.namelist():
                 with z.open(name) as f:
                     try:
                         # pandas can read from file-like objects
-                        df = pd.read_csv(io.TextIOWrapper(f, encoding="utf-8"), low_memory=False)
+                        dtype = dtype_specs.get(name, None)
+                        df = pd.read_csv(io.TextIOWrapper(f, encoding="utf-8"), low_memory=False, dtype=dtype)
                     except Exception:
                         # retry with latin-1 encoding for some GTFS files
                         f.seek(0)
-                        df = pd.read_csv(io.TextIOWrapper(f, encoding="latin-1"), low_memory=False)
+                        dtype = dtype_specs.get(name, None)
+                        df = pd.read_csv(io.TextIOWrapper(f, encoding="latin-1"), low_memory=False, dtype=dtype)
 
                 # Clean dataframe text fields
                 try:
