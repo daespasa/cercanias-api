@@ -3,6 +3,8 @@ import logging
 import os
 import json
 import hashlib
+import zipfile
+import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 
@@ -64,6 +66,52 @@ class GTFSDownloader:
 
     def get_metadata(self) -> Dict[str, Any]:
         return self._read_meta()
+
+    async def _extract_and_rebuild(self, zip_path: str) -> None:
+        """Extract ZIP and rebuild SQLite database in a thread."""
+        data_dir = settings.GTFS_DATA_DIR or "data/gtfs"
+        extract_dir = os.path.join(data_dir, "fomento_transit")
+        db_tmp = os.path.join(data_dir, "gtfs.db.tmp")
+        db_final = os.path.join(data_dir, "gtfs.db")
+
+        def _extract_and_build():
+            # Remove existing extracted directory
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir)
+            
+            # Create directory
+            os.makedirs(extract_dir, exist_ok=True)
+            
+            # Extract ZIP
+            logger.info(f"Extracting GTFS ZIP to {extract_dir}")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            
+            # Rebuild database from extracted directory
+            logger.info(f"Building SQLite database from {extract_dir}")
+            from app.core.gtfs_sqlite_loader import build_sqlite_from_directory
+            
+            # Remove old DB files
+            for p in [db_final, db_final + "-wal", db_final + "-shm", db_tmp]:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+            
+            build_sqlite_from_directory(extract_dir, db_tmp)
+            os.replace(db_tmp, db_final)
+            logger.info(f"SQLite database built successfully at {db_final}")
+
+        # Run in thread pool
+        try:
+            import asyncio as _asyncio
+            await _asyncio.to_thread(_extract_and_build)
+        except AttributeError:
+            import concurrent.futures as _cf
+            loop = asyncio.get_event_loop()
+            with _cf.ThreadPoolExecutor() as ex:
+                await loop.run_in_executor(ex, _extract_and_build)
 
     async def _download_once(self) -> bool:
         """Download the GTFS zip if changed. Returns True if downloaded (and reloaded), False otherwise."""
@@ -133,19 +181,16 @@ class GTFSDownloader:
                     })
                     self._write_meta(meta)
 
-                    # reload GTFS in thread
+                    # Extract ZIP and rebuild database
                     try:
-                        import asyncio as _asyncio
+                        await self._extract_and_rebuild(dest)
+                    except Exception:
+                        logger.exception("Failed to extract and rebuild GTFS database")
+                        meta["status"] = "error_extract"
+                        self._write_meta(meta)
+                        return False
 
-                        await _asyncio.to_thread(gtfs_manager.load, dest)
-                    except AttributeError:
-                        import concurrent.futures as _cf
-
-                        loop = asyncio.get_event_loop()
-                        with _cf.ThreadPoolExecutor() as ex:
-                            await loop.run_in_executor(ex, gtfs_manager.load, dest)
-
-                    # record reload time in meta and manager
+                    # record reload time in meta
                     meta["last_reload_at"] = datetime.now(timezone.utc).isoformat()
                     meta["status"] = "reloaded"
                     self._write_meta(meta)
@@ -154,7 +199,7 @@ class GTFSDownloader:
                     except Exception:
                         logger.exception("Failed to update manager metadata after reload")
 
-                    logger.info("GTFS downloaded and reloaded from %s", url)
+                    logger.info("GTFS downloaded, extracted and database rebuilt from %s", url)
                     return True
         except Exception as e:
             logger.exception(f"Error downloading GTFS: {e}")
@@ -165,11 +210,18 @@ class GTFSDownloader:
 
     async def _loop(self):
         interval = max(1, settings.GTFS_DOWNLOAD_INTERVAL_HOURS) * 3600
-        # initial attempt on start
+        # Check if remote file has changed before downloading
+        logger.info("Checking for GTFS updates on startup")
         try:
-            await self._download_once()
+            result = await self._download_once()
+            if result:
+                logger.info("GTFS data was updated on startup")
+            else:
+                logger.info("GTFS data is up to date, skipping download")
         except Exception:
-            logger.exception("Initial GTFS download failed")
+            logger.exception("Initial GTFS check failed")
+        
+        # Continue checking periodically
         while not self._stop.is_set():
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
