@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pandas
+python-multipart
+pydantic
+pytest
+httpx
+aiohttp
+gtfs-realtime-bindings
