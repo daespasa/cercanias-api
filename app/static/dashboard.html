@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Cercanías - Panel de control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = { darkMode: "class" };
+    </script>
+    <link rel="stylesheet" href="/static/dashboard.css" />
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-sA+e2w1gD3gqY3VY9q4u2r7r6V6sV6wqk0mYh4kP4o0="
+      crossorigin=""
+    />
+  </head>
+  <body>
+    <header
+      class="bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700"
+    >
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+        <h1 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
+          Cercanías — Panel
+        </h1>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-2">
+          <input
+            id="searchBox"
+            class="px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100"
+            placeholder="Buscar parada por nombre..."
+            aria-label="Buscar parada"
+          />
+          <select
+            id="stopSelect"
+            class="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+            aria-label="Lista de paradas"
+          ></select>
+          <input
+            id="dateSelect"
+            type="date"
+            class="px-2 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+          />
+          <button
+            id="refreshBtn"
+            class="px-3 py-2 rounded-lg bg-blue-600 text-white"
+          >
+            Actualizar
+          </button>
+          <label
+            class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
+            ><input type="checkbox" id="autoRefresh" /> Auto</label
+          >
+          <button
+            id="darkToggle"
+            class="px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+          >
+            🌙
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <aside class="card" style="min-width: 260px; max-width: 420px">
+        <h2 style="margin-top: 0">Información</h2>
+        <div id="infoContent">Seleccione una estación o use la búsqueda.</div>
+        <h3 style="margin-bottom: 6px; margin-top: 12px">Rutas</h3>
+        <div id="routesContent">—</div>
+        <div id="map" class="mt-3 rounded-md overflow-hidden h-64"></div>
+      </aside>
+
+      <section class="card" id="scheduleSection">
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          "
+        >
+          <h2 style="margin: 0">Próximas salidas / llegadas</h2>
+          <div id="spinner" aria-hidden="true" style="display: none">
+            Cargando…
+          </div>
+        </div>
+        <div id="scheduleContent">—</div>
+        <div
+          style="
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+          "
+        >
+          <button id="prevPage">Anterior</button>
+          <button id="nextPage">Siguiente</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <small
+        >Interfaz ligera para inspeccionar la API GTFS. Usa tu `API_KEY` si está
+        habilitada.</small
+      >
+    </footer>
+
+    <!-- Leaflet JS (load before our script so `L` is available) -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-o9N1j8k+g2+M4pX4l6wXk5fZ+Yx2q1Yj3v+Xv6Z8m+M="
+      crossorigin=""
+    ></script>
+    <script src="/static/dashboard.js"></script>
+  </body>
+</html>
