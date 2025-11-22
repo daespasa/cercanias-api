@@ -1,123 +1,261 @@
-# Cercanías API
+# 🚆 Cercanías API — FastAPI GTFS Service
 
-API sencilla en FastAPI para consultar datos GTFS de Renfe Cercanías.
+API moderna y optimizada construida con **FastAPI** para consultar horarios, rutas y paradas de **Renfe Cercanías** utilizando datos **GTFS** oficiales.
 
-## Requisitos
+Incluye:
 
-- Python 3.9+
-- (Opcional) crear y activar un entorno virtual
+* Loader GTFS completo con validación, normalización y metadatos persistidos.
+* Filtrado por fecha real usando `calendar.txt` y `calendar_dates.txt`.
+* Endpoints REST con respuestas estandarizadas.
+* Seguridad opcional mediante `X-API-Key`.
+* Tests unitarios incluidos.
+* Preparada para producción con Uvicorn y estructura profesional.
 
-````markdown
-# Cercanías API
+---
 
-API sencilla en FastAPI para consultar datos GTFS de Renfe Cercanías.
+## 📦 Requisitos
 
-## Requisitos
+* Python **3.9+**
+* (Opcional pero recomendado) **entorno virtual** `venv`
+* Archivo GTFS `fomento_transit.zip`
 
-- Python 3.9+
-- (Opcional) crear y activar un entorno virtual
+---
 
-## Instalación
+## 🛠 Instalación
 
-1. Instalar dependencias:
+### 1. Clonar el repositorio
 
-```powershell
-python -m pip install -r requirements.txt
+```bash
+git clone https://github.com/daespasa/cercanias-api.git
+cd cercanias-api
 ```
 
-2. Coloca el archivo GTFS ZIP en el directorio `data/gtfs/` (por defecto) con el nombre por defecto `fomento_transit.zip`, o define la ruta/ubicación en `.env` con las variables `GTFS_DATA_DIR` y/o `GTFS_PATH`.
+### 2. Crear y activar entorno virtual
 
-3. (Opcional) configura la API key en `.env`:
-
-```text
-API_KEY=tu_api_key_aqui
-```
-
-Si `API_KEY` está presente, la API exigirá el header `X-API-Key` en las peticiones.
-
-## Ejecutar la API
-
-Recomendado (script incluido):
+PowerShell:
 
 ```powershell
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Instalar dependencias
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Colocar los datos GTFS
+
+Por defecto se espera:
+
+```
+data/
+ └── gtfs/
+      ├── fomento_transit.zip
+      └── fomento_transit.meta (generado automáticamente)
+```
+
+Puedes cambiar estas rutas en el archivo `.env`:
+
+```
+GTFS_DATA_DIR=data/gtfs
+GTFS_PATH=fomento_transit.zip
+```
+
+### (Opcional) API Key
+
+Para activar seguridad:
+
+```
+API_KEY=123456
+```
+
+Después deberás enviar:
+
+```
+X-API-Key: 123456
+```
+
+---
+
+## 🚀 Ejecutar la API
+
+### Opción recomendada (script incluido)
+
+```bash
 python run.py
 ```
 
-Opciones de entorno:
-
-- `HOST` — host a escuchar (por defecto `0.0.0.0`)
-- `PORT` — puerto (por defecto `8000`)
-- `UVICORN_RELOAD` — `true`/`false` para habilitar recarga automática en desarrollo
-
-Ejemplo con recarga (PowerShell):
+Con recarga automática:
 
 ```powershell
-#$env:UVICORN_RELOAD = "true"; python run.py
+$env:UVICORN_RELOAD="true"
+python run.py
 ```
 
-Alternativa directa usando uvicorn:
+### Opción manual:
 
-```powershell
-python -m uvicorn app:app --reload
+```bash
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-La API estará disponible en `http://127.0.0.1:8000` por defecto.
+📍 Por defecto se ejecuta en:
 
-> Nota: `run.py` crea el directorio `GTFS_DATA_DIR` si no existe antes de arrancar.
+➡ **[http://127.0.0.1:8000](http://127.0.0.1:8000)**
 
-## Variables y carpeta de datos GTFS
+📖 Documentación interactiva:
 
-- `GTFS_DATA_DIR` (por defecto `data/gtfs`) — carpeta donde se almacenan el ZIP GTFS y el fichero `.meta` con metadatos.
-- `GTFS_PATH` — nombre del fichero ZIP dentro de `GTFS_DATA_DIR` (por defecto `fomento_transit.zip`).
+➡ **[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)**
+➡ **[http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)**
 
-El downloader (si está configurado) usa ETag / If-Modified-Since y guarda metadatos JSON junto al ZIP.
+---
 
-## Endpoints principales
+## 📚 Endpoints Principales
 
-- `GET /stops/` — lista de paradas. Parámetro opcional `limit`.
-- `GET /stops/{stop_id}` — detalles de una parada.
-- `GET /routes/` — lista de rutas.
-- `GET /routes/{route_id}` — detalle de una ruta.
-- `GET /schedule/?stop_id=...&route_id=...&date=YYYY-MM-DD` — entradas de horario filtradas. `date` intenta filtrar usando `calendar.txt` y `calendar_dates.txt`.
+### 🔹 **GET /stops/**
 
-Ejemplo con `curl` (sin API key configurada):
+Lista todas las paradas.
 
-```powershell
+```bash
 curl http://127.0.0.1:8000/stops/
-curl "http://127.0.0.1:8000/schedule/?stop_id=S1&date=2025-06-01"
 ```
 
-Si has configurado `API_KEY`, añade el header `X-API-Key`:
+### 🔹 **GET /stops/{stop_id}**
 
-```powershell
-curl -H "X-API-Key: tu_api_key" http://127.0.0.1:8000/stops/
+Detalles de una parada.
+
+### 🔹 **GET /routes/**
+
+Lista de rutas.
+
+### 🔹 **GET /routes/{route_id}**
+
+Detalle de rutas + información GTFS.
+
+### 🔹 **GET /schedule/**
+
+Consulta de horarios combinando:
+
+* `stop_times`
+* `trips`
+* `routes`
+* `calendar` (días activos)
+* `calendar_dates` (excepciones)
+
+Parámetros:
+
+* `stop_id`
+* `route_id`
+* `date=YYYY-MM-DD`
+
+Ejemplo:
+
+```bash
+curl "http://127.0.0.1:8000/schedule/?stop_id=65000&date=2025-06-01"
 ```
 
-## Endpoints administrativos
+### 🔹 **GET /admin/gtfs/meta**
 
-- `GET /admin/gtfs/meta` — devuelve metadatos persistidos del ZIP en disco y metadatos actuales del `GTFSManager` (timestamps, etag, hash, size, status).
+Metadatos del GTFS:
 
-Si quieres forzar recargas o añadir endpoints de administración, puedes extender el router `app/routers/admin.py`.
+* ETAG
+* Last-Modified
+* Hash
+* Fecha de carga
+* Conteo de registros
 
-## Convenciones y seguridad
+---
 
-- Los errores HTTP se devuelven en estilo Problem Details (`type`, `title`, `status`, `detail`).
-- Validación simple de seguridad por `X-API-Key` si `API_KEY` está presente en la configuración.
+## 🛡 Seguridad
 
-## Tests
+Si `API_KEY` existe en `.env`, todos los endpoints requerirán:
 
-Para ejecutar los tests unitarios:
+```
+X-API-Key: <tu_api_key>
+```
 
-```powershell
-python -m pip install -r requirements.txt
+Errores siguen el formato **RFC 7807 Problem Details**, por ejemplo:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unauthorized",
+  "detail": "Missing or invalid API key",
+  "status": 401
+}
+```
+
+---
+
+## 🧪 Tests
+
+```bash
+pip install -r requirements.txt
 pytest -q
 ```
 
-Los tests residen en `tests/` y usan directorios temporales y `monkeypatch` para aislar la dependencia de `GTFS_DATA_DIR`.
+Los tests incluyen:
 
-## Siguientes pasos recomendados
+* Mock del cargador GTFS
+* Validación de endpoints
+* Manejo de fechas y calendar.txt
+* Metadatos
 
-- Añadir más validaciones y paginación para listados grandes.
-- Mejorar performance (indexar/serializar) para GTFS grandes.
-- Añadir endpoints de búsqueda por nombre y proximidad geográfica.
-````
+---
+
+## 🗂 Estructura del proyecto
+
+```
+cercanias-api/
+│
+├── app/
+│   ├── core/          # Loader GTFS + utilidades
+│   ├── routers/       # Routers FastAPI
+│   ├── models/        # Esquemas Pydantic
+│   ├── deps/          # Dependencias inyectables (auth, manager…)
+│   └── __init__.py    # Crea la app FastAPI
+│
+├── data/
+│   └── gtfs/          # ZIP + metadatos
+│
+├── tests/             # Tests unitarios
+├── run.py             # Lanzador de la API
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## 🚧 Roadmap (ideas futuras)
+
+* Cache Redis opcional
+* GTFS-RT (vehículos, alertas, retrasos)
+* Endpoint de proximidad geográfica
+* Históricos y agregaciones
+* CLI: `cercanias-cli search --stop "Nord"`
+
+---
+
+## ❤️ Contribuir
+
+Pull Requests abiertas.
+
+Si deseas colaborar:
+
+```
+git checkout -b feature/lo-que-sea
+```
+
+---
+
+## 📄 Licencia
+
+MIT — Libre para uso personal y comercial.
