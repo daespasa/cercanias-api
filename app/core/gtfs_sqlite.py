@@ -253,3 +253,178 @@ class GTFSStore:
             return rows
         finally:
             conn.close()
+
+    def get_upcoming_trains(self, stop_id: str, current_time: Optional[str] = None, limit: int = 10) -> Dict:
+        """Get upcoming departures and arrivals for a stop.
+        
+        Args:
+            stop_id: Stop ID to query
+            current_time: Current time in HH:MM:SS format (defaults to now)
+            limit: Maximum number of trains to return for each category
+            
+        Returns:
+            Dict with:
+            - stop_id, stop_name, current_time
+            - departures: list of upcoming trains departing from this stop
+            - arrivals: list of upcoming trains arriving at this stop
+            Each train includes: trip_id, route info, headsign, scheduled time, minutes_until
+        """
+        import datetime
+        
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            
+            # Get stop info
+            cur.execute("SELECT stop_id, stop_name FROM stops WHERE stop_id = ? LIMIT 1", (stop_id,))
+            stop_row = cur.fetchone()
+            if not stop_row:
+                return {
+                    'stop_id': stop_id,
+                    'stop_name': None,
+                    'current_time': current_time or '00:00:00',
+                    'departures': [],
+                    'arrivals': []
+                }
+            
+            stop_name = stop_row['stop_name']
+            
+            # Determine current time
+            if not current_time:
+                now = datetime.datetime.now()
+                current_time = now.strftime('%H:%M:%S')
+            
+            # Parse current time to minutes since midnight for calculations
+            time_parts = current_time.split(':')
+            current_minutes = int(time_parts[0]) * 60 + int(time_parts[1])
+            
+            # Get active service IDs for today
+            today = datetime.date.today()
+            weekday = today.weekday()  # 0=Monday, 6=Sunday
+            date_key = today.strftime('%Y%m%d')
+            
+            # Map weekday to GTFS column names
+            weekday_cols = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+            weekday_col = weekday_cols[weekday]
+            
+            # Get active services from calendar
+            active_services_query = f"""
+                SELECT DISTINCT service_id FROM calendar 
+                WHERE {weekday_col} = 1 
+                AND start_date <= ? 
+                AND end_date >= ?
+            """
+            cur.execute(active_services_query, (date_key, date_key))
+            active_services = [row['service_id'] for row in cur.fetchall()]
+            
+            if not active_services:
+                return {
+                    'stop_id': stop_id,
+                    'stop_name': stop_name,
+                    'current_time': current_time,
+                    'departures': [],
+                    'arrivals': []
+                }
+            
+            placeholders = ','.join('?' for _ in active_services)
+            
+            # Query for DEPARTURES (trains leaving this stop)
+            departures_query = f"""
+                SELECT 
+                    st.trip_id,
+                    st.departure_time as scheduled_time,
+                    st.stop_sequence,
+                    t.trip_headsign,
+                    r.route_id,
+                    r.route_short_name,
+                    r.route_long_name
+                FROM stop_times st
+                JOIN trips t ON st.trip_id = t.trip_id
+                JOIN routes r ON t.route_id = r.route_id
+                WHERE st.stop_id = ?
+                AND t.service_id IN ({placeholders})
+                AND st.departure_time >= ?
+                ORDER BY st.departure_time
+                LIMIT ?
+            """
+            
+            params = [stop_id] + active_services + [current_time, limit]
+            cur.execute(departures_query, params)
+            departure_rows = cur.fetchall()
+            
+            # Query for ARRIVALS (trains arriving at this stop)
+            arrivals_query = f"""
+                SELECT 
+                    st.trip_id,
+                    st.arrival_time as scheduled_time,
+                    st.stop_sequence,
+                    t.trip_headsign,
+                    r.route_id,
+                    r.route_short_name,
+                    r.route_long_name
+                FROM stop_times st
+                JOIN trips t ON st.trip_id = t.trip_id
+                JOIN routes r ON t.route_id = r.route_id
+                WHERE st.stop_id = ?
+                AND t.service_id IN ({placeholders})
+                AND st.arrival_time >= ?
+                ORDER BY st.arrival_time
+                LIMIT ?
+            """
+            
+            cur.execute(arrivals_query, params)
+            arrival_rows = cur.fetchall()
+            
+            # Helper function to calculate minutes until
+            def calculate_minutes_until(scheduled_time_str: str) -> int:
+                """Calculate minutes from current_time to scheduled_time."""
+                parts = scheduled_time_str.split(':')
+                scheduled_minutes = int(parts[0]) * 60 + int(parts[1])
+                
+                # Handle times past midnight (like 25:30:00 for 1:30 AM next day)
+                if scheduled_minutes < current_minutes and scheduled_minutes < 180:  # likely next day
+                    scheduled_minutes += 24 * 60
+                
+                return scheduled_minutes - current_minutes
+            
+            # Format departures
+            departures = []
+            for row in departure_rows:
+                departures.append({
+                    'trip_id': row['trip_id'],
+                    'route_short_name': row['route_short_name'],
+                    'route_long_name': row['route_long_name'],
+                    'trip_headsign': row['trip_headsign'] or 'Sin destino',
+                    'headsign': row['trip_headsign'] or 'Sin destino',
+                    'direction_id': None,  # Not available in this dataset
+                    'departure_time': row['scheduled_time'],
+                    'scheduled_time': row['scheduled_time'],
+                    'minutes_until': calculate_minutes_until(row['scheduled_time']),
+                    'stop_sequence': row['stop_sequence']
+                })
+            
+            # Format arrivals
+            arrivals = []
+            for row in arrival_rows:
+                arrivals.append({
+                    'trip_id': row['trip_id'],
+                    'route_short_name': row['route_short_name'],
+                    'route_long_name': row['route_long_name'],
+                    'trip_headsign': row['trip_headsign'] or 'Sin origen',
+                    'headsign': row['trip_headsign'] or 'Sin origen',
+                    'direction_id': None,  # Not available in this dataset
+                    'arrival_time': row['scheduled_time'],
+                    'scheduled_time': row['scheduled_time'],
+                    'minutes_until': calculate_minutes_until(row['scheduled_time']),
+                    'stop_sequence': row['stop_sequence']
+                })
+            
+            return {
+                'stop_id': stop_id,
+                'stop_name': stop_name,
+                'current_time': current_time,
+                'departures': departures,
+                'arrivals': arrivals
+            }
+        finally:
+            conn.close()
