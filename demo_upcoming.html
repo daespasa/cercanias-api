@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Próximos Trenes - Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        input, select, button {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .info-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .section-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .departures .section-title { color: #f59e0b; }
+        .arrivals .section-title { color: #10b981; }
+        .train-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+        .train-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .train-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .route-badge {
+            background: #667eea;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .time-badge {
+            background: #fbbf24;
+            color: #78350f;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        .time-badge.soon {
+            background: #ef4444;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .scheduled-time {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 18px;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+            font-style: italic;
+        }
+        .current-time {
+            background: #e0e7ff;
+            color: #4338ca;
+            padding: 10px 20px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚆 Próximos Trenes</h1>
+            <p>Consulta los trenes que salen y llegan a una estación</p>
+            
+            <div class="controls">
+                <select id="stopSelect">
+                    <option value="">Cargando paradas...</option>
+                </select>
+                <input type="time" id="timeInput" placeholder="HH:MM:SS">
+                <input type="number" id="limitInput" placeholder="Límite" value="5" min="1" max="20">
+                <button onclick="fetchTrains()">🔍 Consultar</button>
+                <button onclick="useCurrentTime()">⏰ Usar hora actual</button>
+            </div>
+            
+            <div id="currentTimeDisplay"></div>
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // API base URL
+        const API_URL = 'http://127.0.0.1:8000';
+
+        // Load stops on page load
+        window.addEventListener('DOMContentLoaded', loadStops);
+
+        async function loadStops() {
+            try {
+                const response = await fetch(`${API_URL}/stops/names?limit=100`);
+                const data = await response.json();
+                const select = document.getElementById('stopSelect');
+                
+                select.innerHTML = '<option value="">-- Selecciona una estación --</option>';
+                data.data.forEach(stop => {
+                    const option = document.createElement('option');
+                    option.value = stop.stop_id;
+                    option.textContent = stop.stop_name;
+                    select.appendChild(option);
+                });
+                
+                // Select first stop by default
+                if (data.data.length > 0) {
+                    select.value = data.data[0].stop_id;
+                }
+            } catch (error) {
+                console.error('Error loading stops:', error);
+                document.getElementById('stopSelect').innerHTML = '<option value="">Error cargando paradas</option>';
+            }
+        }
+
+        function useCurrentTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('timeInput').value = `${hours}:${minutes}`;
+            fetchTrains();
+        }
+
+        async function fetchTrains() {
+            const stopId = document.getElementById('stopSelect').value;
+            const timeInput = document.getElementById('timeInput').value;
+            const limit = document.getElementById('limitInput').value || 5;
+            
+            if (!stopId) {
+                alert('Por favor selecciona una estación');
+                return;
+            }
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="info-card loading">⏳ Consultando próximos trenes...</div>';
+
+            try {
+                let url = `${API_URL}/stops/${stopId}/upcoming?limit=${limit}`;
+                if (timeInput) {
+                    url += `&current_time=${timeInput}:00`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Error al consultar');
+                }
+
+                displayResults(data.data);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="info-card error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            const currentTimeDiv = document.getElementById('currentTimeDisplay');
+            
+            currentTimeDiv.innerHTML = `<span class="current-time">📍 ${data.stop_name} | ⏰ ${data.current_time}</span>`;
+
+            let html = '';
+
+            // Departures
+            html += '<div class="info-card departures">';
+            html += '<div class="section-title">🚀 Salidas</div>';
+            if (data.departures.length === 0) {
+                html += '<div class="empty">No hay trenes de salida próximamente</div>';
+            } else {
+                data.departures.forEach(train => {
+                    const isSoon = train.minutes_until <= 5;
+                    html += `
+                        <div class="train-item">
+                            <div class="train-info">
+                                <span class="route-badge">${train.route_short_name || 'N/A'}</span>
+                                <div>
+                                    <div>${train.trip_headsign || 'Destino no especificado'}</div>
+                                    <div class="scheduled-time">Salida: ${train.scheduled_time}</div>
+                                </div>
+                            </div>
+                            <span class="time-badge ${isSoon ? 'soon' : ''}">${train.minutes_until} min</span>
+                        </div>
+                    `;
+                });
+            }
+            html += '</div>';
+
+            // Arrivals
+            html += '<div class="info-card arrivals">';
+            html += '<div class="section-title">📥 Llegadas</div>';
+            if (data.arrivals.length === 0) {
+                html += '<div class="empty">No hay trenes de llegada próximamente</div>';
+            } else {
+                data.arrivals.forEach(train => {
+                    const isSoon = train.minutes_until <= 5;
+                    html += `
+                        <div class="train-item">
+                            <div class="train-info">
+                                <span class="route-badge">${train.route_short_name || 'N/A'}</span>
+                                <div>
+                                    <div>${train.trip_headsign || 'Origen no especificado'}</div>
+                                    <div class="scheduled-time">Llegada: ${train.scheduled_time}</div>
+                                </div>
+                            </div>
+                            <span class="time-badge ${isSoon ? 'soon' : ''}">${train.minutes_until} min</span>
+                        </div>
+                    `;
+                });
+            }
+            html += '</div>';
+
+            resultsDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
