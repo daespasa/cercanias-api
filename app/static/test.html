@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Dashboard</title>
+</head>
+<body>
+    <h1>Test Dashboard JavaScript</h1>
+    <div id="output"></div>
+    <button onclick="testAPI()">Test API</button>
+    
+    <script>
+        console.log('Test script loaded');
+        
+        async function testAPI() {
+            console.log('Testing API...');
+            const output = document.getElementById('output');
+            try {
+                const response = await fetch('/stops/names?limit=5');
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Data received:', data);
+                output.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                console.error('Error:', error);
+                output.innerHTML = 'Error: ' + error.message;
+            }
+        }
+        
+        // Auto-test on load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM loaded, testing API...');
+            testAPI();
+        });
+    </script>
+</body>
+</html>
