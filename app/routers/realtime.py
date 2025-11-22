@@ -6,7 +6,15 @@ from app.utils.response import success_response
 router = APIRouter(prefix="/realtime", tags=["Realtime"])
 
 
-@router.get("/alerts", summary="Alertas en tiempo real", description="Devuelve alertas (incidencias/avisos) obtenidas desde el feed RT de Renfe.")
+@router.get(
+    "/alerts",
+    summary="Alertas en tiempo real",
+    description=(
+        "Recupera alertas e incidencias en tiempo real extraídas del feed RT. "
+        "Las alertas se normalizan en un formato serializable para permitir su "
+        "consumo por integraciones externas."
+    ),
+)
 def get_alerts():
     alerts = gtfs_manager.get_rt_alerts()
     # The alerts are protobuf Alert objects; return as dicts where possible
@@ -23,7 +31,15 @@ def get_alerts():
     return success_response(result)
 
 
-@router.get("/vehicles", summary="Posiciones de vehículos en tiempo real", description="Devuelve la última posición/estado de vehículos. Soporta filtros `route_id` y `trip_id`.")
+@router.get(
+    "/vehicles",
+    summary="Posiciones de vehículos en tiempo real",
+    description=(
+        "Proporciona la posición y estado actual de vehículos en operación. "
+        "Soporta filtros por `route_id` y `trip_id`. Los datos devueltos son "
+        "ligeros (lat/lon, bearing, velocidad y estado)."
+    ),
+)
 def get_vehicles(route_id: Optional[str] = Query(None), trip_id: Optional[str] = Query(None)):
     vehicles = gtfs_manager.get_rt_vehicles(route_id=route_id, trip_id=trip_id)
     out = []
@@ -44,7 +60,15 @@ def get_vehicles(route_id: Optional[str] = Query(None), trip_id: Optional[str] =
     return success_response(out)
 
 
-@router.get("/trip_updates", summary="Trip updates en tiempo real", description="Actualizaciones de viajes (cambios de horario, cancelaciones, etc.). Soporta filtrar por `trip_id` y `route_id`.")
+@router.get(
+    "/trip_updates",
+    summary="Trip updates en tiempo real",
+    description=(
+        "Actualizaciones en tiempo real sobre viajes: variaciones de horario, "
+        "cancelaciones y reprogramaciones. Se puede filtrar por `trip_id` o "
+        "`route_id`."
+    ),
+)
 def get_trip_updates(trip_id: Optional[str] = Query(None), route_id: Optional[str] = Query(None)):
     updates = gtfs_manager.get_rt_trip_updates(trip_id=trip_id, route_id=route_id)
     out = []
